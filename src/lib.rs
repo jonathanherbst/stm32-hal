@@ -408,7 +408,6 @@ pub mod dac;
     feature = "l4x2",
     feature = "l412",
     feature = "l4x3",
-    feature = "l4x6",
     feature = "g0",
     feature = "g4",
     feature = "wb",
@@ -416,6 +415,21 @@ pub mod dac;
     feature = "l5", // todo: L5 just doesn't have the same PAC layout; doesn't use clusters.
 )))]
 pub mod dfsdm;
+
+#[cfg(not(any(
+    feature = "f3",
+    feature = "f4",
+    feature = "l4x1",
+    feature = "l4x2",
+    feature = "l412",
+    feature = "l4x3",
+    feature = "g0",
+    feature = "g4",
+    feature = "wb",
+    feature = "wl",
+    feature = "l5", // todo: L5 just doesn't have the same PAC layout; doesn't use clusters.
+)))]
+pub mod dfsdm_regs;
 
 #[cfg(not(any(feature = "f4", feature = "l552")))]
 pub mod dma;

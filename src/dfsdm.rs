@@ -11,7 +11,7 @@ use crate::{clocks::Clocks, pac::RCC, util::rcc_en_reset};
 use cfg_if::cfg_if;
 
 cfg_if! {
-    if #[cfg(any(feature = "l5", feature = "h7b3"))] {
+    if #[cfg(any(feature = "l4x6", feature = "l5", feature = "h7b3"))] {
         use crate::pac::dfsdm1 as dfsdm_p;
     } else {
         use crate::pac::dfsdm as dfsdm_p;
@@ -191,7 +191,7 @@ impl Default for DfsdmConfig {
 /// Represents the Digital filter for sigma delta modulators (DFSDM) peripheral, for
 /// interfacing with external Σ∆ modulators.
 pub struct Dfsdm<R> {
-    pub regs: R,
+    pub regs: DfsdmRegs<R>,
     config: DfsdmConfig,
 }
 
@@ -202,7 +202,7 @@ where
 {
     /// Initialize a DFSDM peripheral, including  enabling and resetting
     /// its RCC peripheral clock.
-    pub fn new(regs: R, config: DfsdmConfig, clock_cfg: &Clocks) -> Self {
+    pub fn new(regs_raw: R, config: DfsdmConfig, clock_cfg: &Clocks) -> Self {
         free(|_| {
             let rcc = unsafe { &(*RCC::ptr()) };
             #[cfg(not(feature = "l4"))]
@@ -242,7 +242,9 @@ where
         // CKOUTDIV also defines the threshold for a clock absence detection.
         assert!(divider >= 2); // (1 is invalid. 2 would disable the output clock.)
 
-        regs.ch0.cfgr1.modify(|_, w| unsafe {
+        let regs = DfsdmRegs {regs: regs_raw};
+
+        regs.ch0_cfgr1().modify(|_, w| unsafe {
             w.ckoutsrc().bit(config.clock_src as u8 != 0);
             w.ckoutdiv().bits(divider as u8 - 1)
         });
@@ -279,14 +281,14 @@ where
     /// enable bit CHEN in CHyCFGR1 and FLTx enable bit DFEN in
     /// FLTxCR1).
     pub fn enable(&mut self) {
-        self.regs.ch0.cfgr1.modify(|_, w| w.dfsdmen().set_bit());
+        self.regs.ch0_cfgr1().modify(|_, w| w.dfsdmen().set_bit());
     }
 
     /// Disables the DFSDM peripheral.
     /// DFSDM must be globally disabled (by DFSDMEN=0 in CH0CFGR1) before
     /// stopping the system clock to enter in the STOP mode of the device
     pub fn disable(&mut self) {
-        self.regs.ch0.cfgr1.modify(|_, w| w.dfsdmen().clear_bit());
+        self.regs.ch0_cfgr1().modify(|_, w| w.dfsdmen().clear_bit());
     }
 
     /// Configures and enables the DFSDM filter for a given channel, and enables
@@ -349,12 +351,12 @@ where
 
         match filter {
             Filter::F0 => {
-                self.regs.flt0.fcr.modify(|_, w| unsafe {
+                self.regs.flt0_fcr().modify(|_, w| unsafe {
                     w.ford().bits(self.config.filter_order as u8);
                     w.fosr().bits(self.config.filter_oversampling_ratio - 1);
                     w.iosr().bits(self.config.integrator_oversampling_ratio - 1)
                 });
-                self.regs.flt0.cr1.modify(|_, w| unsafe {
+                self.regs.flt0_cr1().modify(|_, w| unsafe {
                     w.rcont().bit(self.config.continuous != Continuous::OneShot);
                     w.fast()
                         .bit(self.config.continuous == Continuous::ContinuousFastMode);
@@ -363,12 +365,12 @@ where
                 });
             }
             Filter::F1 => {
-                self.regs.flt1.fcr.modify(|_, w| unsafe {
+                self.regs.flt1_fcr().modify(|_, w| unsafe {
                     w.ford().bits(self.config.filter_order as u8);
                     w.fosr().bits(self.config.filter_oversampling_ratio - 1);
                     w.iosr().bits(self.config.integrator_oversampling_ratio - 1)
                 });
-                self.regs.flt1.cr1.modify(|_, w| unsafe {
+                self.regs.flt1_cr1().modify(|_, w| unsafe {
                     w.rcont().bit(self.config.continuous != Continuous::OneShot);
                     w.fast()
                         .bit(self.config.continuous == Continuous::ContinuousFastMode);
@@ -378,12 +380,12 @@ where
             }
             #[cfg(not(any(feature = "l4")))]
             Filter::F2 => {
-                self.regs.flt2.fcr.modify(|_, w| unsafe {
+                self.regs.flt2_fcr().modify(|_, w| unsafe {
                     w.ford().bits(self.config.filter_order as u8);
                     w.fosr().bits(self.config.filter_oversampling_ratio - 1);
                     w.iosr().bits(self.config.integrator_oversampling_ratio - 1)
                 });
-                self.regs.flt2.cr1.modify(|_, w| unsafe {
+                self.regs.flt2_cr1().modify(|_, w| unsafe {
                     w.rcont().bit(self.config.continuous != Continuous::OneShot);
                     w.fast()
                         .bit(self.config.continuous == Continuous::ContinuousFastMode);
@@ -393,12 +395,12 @@ where
             }
             #[cfg(not(any(feature = "l4")))]
             Filter::F3 => {
-                self.regs.flt3.fcr.modify(|_, w| unsafe {
+                self.regs.flt3_fcr().modify(|_, w| unsafe {
                     w.ford().bits(self.config.filter_order as u8);
                     w.fosr().bits(self.config.filter_oversampling_ratio - 1);
                     w.iosr().bits(self.config.integrator_oversampling_ratio - 1)
                 });
-                self.regs.flt3.cr1.modify(|_, w| unsafe {
+                self.regs.flt3_cr1().modify(|_, w| unsafe {
                     w.rcont().bit(self.config.continuous != Continuous::OneShot);
                     w.fast()
                         .bit(self.config.continuous == Continuous::ContinuousFastMode);
@@ -418,81 +420,81 @@ where
 
         match channel {
             DfsdmChannel::C0 => unsafe {
-                self.regs.ch0.cfgr2.modify(|_, w| {
+                self.regs.ch0_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch0.cfgr1.modify(|_, w| {
+                self.regs.ch0_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C1 => unsafe {
-                self.regs.ch1.cfgr2.modify(|_, w| {
+                self.regs.ch1_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch1.cfgr1.modify(|_, w| {
+                self.regs.ch1_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C2 => unsafe {
-                self.regs.ch2.cfgr2.modify(|_, w| {
+                self.regs.ch2_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch2.cfgr1.modify(|_, w| {
+                self.regs.ch2_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C3 => unsafe {
-                self.regs.ch3.cfgr2.modify(|_, w| {
+                self.regs.ch3_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch3.cfgr1.modify(|_, w| {
+                self.regs.ch3_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C4 => unsafe {
-                self.regs.ch4.cfgr2.modify(|_, w| {
+                self.regs.ch4_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch4.cfgr1.modify(|_, w| {
+                self.regs.ch4_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C5 => unsafe {
-                self.regs.ch5.cfgr2.modify(|_, w| {
+                self.regs.ch5_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch5.cfgr1.modify(|_, w| {
+                self.regs.ch5_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C6 => unsafe {
-                self.regs.ch6.cfgr2.modify(|_, w| {
+                self.regs.ch6_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch6.cfgr1.modify(|_, w| {
+                self.regs.ch6_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
             },
             DfsdmChannel::C7 => unsafe {
-                self.regs.ch7.cfgr2.modify(|_, w| {
+                self.regs.ch7_cfgr2().modify(|_, w| {
                     w.dtrbs().bits(self.config.right_shift_bits);
                     w.offset().bits(self.config.offset)
                 });
-                self.regs.ch7.cfgr1.modify(|_, w| {
+                self.regs.ch7_cfgr1().modify(|_, w| {
                     w.spicksel().bits(self.config.spi_clock as u8);
                     w.chen().set_bit()
                 });
@@ -506,12 +508,12 @@ where
     /// FLTxAWSR and FLTxISR (which are reset).
     pub fn disable_filter(&mut self, filter: Filter) {
         match filter {
-            Filter::F0 => self.regs.flt0.cr1.modify(|_, w| w.dfen().clear_bit()),
-            Filter::F1 => self.regs.flt1.cr1.modify(|_, w| w.dfen().clear_bit()),
+            Filter::F0 => self.regs.flt0_cr1().modify(|_, w| w.dfen().clear_bit()),
+            Filter::F1 => self.regs.flt1_cr1().modify(|_, w| w.dfen().clear_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => self.regs.flt2.cr1.modify(|_, w| w.dfen().clear_bit()),
+            Filter::F2 => self.regs.flt2_cr1().modify(|_, w| w.dfen().clear_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => self.regs.flt3.cr1.modify(|_, w| w.dfen().clear_bit()),
+            Filter::F3 => self.regs.flt3_cr1().modify(|_, w| w.dfen().clear_bit()),
         }
     }
 
@@ -525,7 +527,7 @@ where
 
         match channel {
             DfsdmChannel::C0 => {
-                self.regs.ch0.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch0_cfgr1().modify(|_, w| unsafe {
                     // • Channel y will be configured: CHINSEL = 0 (input from given channel pins: DATINy,
                     // CKINy).
                     w.chinsel().clear_bit();
@@ -534,7 +536,7 @@ where
                     w.sitp().bits(0)
                 });
 
-                self.regs.ch7.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch7_cfgr1().modify(|_, w| unsafe {
                     // • Channel (y-1) (modulo 8) will be configured: CHINSEL = 1 (input from the following
                     // channel ((y-1)+1) pins: DATINy, CKINy).
                     w.chinsel().set_bit();
@@ -544,34 +546,34 @@ where
                 });
             }
             DfsdmChannel::C1 => {
-                self.regs.ch1.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch1_cfgr1().modify(|_, w| unsafe {
                     w.chinsel().clear_bit();
                     w.sitp().bits(0)
                 });
 
-                self.regs.ch0.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch0_cfgr1().modify(|_, w| unsafe {
                     w.chinsel().set_bit();
                     w.sitp().bits(1)
                 });
             }
             DfsdmChannel::C2 => {
-                self.regs.ch2.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch2_cfgr1().modify(|_, w| unsafe {
                     w.chinsel().clear_bit();
                     w.sitp().bits(0)
                 });
 
-                self.regs.ch1.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch1_cfgr1().modify(|_, w| unsafe {
                     w.chinsel().set_bit();
                     w.sitp().bits(1)
                 });
             }
             DfsdmChannel::C3 => {
-                self.regs.ch3.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch3_cfgr1().modify(|_, w| unsafe {
                     w.chinsel().clear_bit();
                     w.sitp().bits(0)
                 });
 
-                self.regs.ch2.cfgr1.modify(|_, w| unsafe {
+                self.regs.ch2_cfgr1().modify(|_, w| unsafe {
                     w.chinsel().set_bit();
                     w.sitp().bits(1)
                 });
@@ -591,12 +593,12 @@ where
         // Regular conversions can be launched using the following methods:
         // • Software: by writing ‘1’ to RSWSTART in the FLTxCR1 register.
         match filter {
-            Filter::F0 => self.regs.flt0.cr1.modify(|_, w| w.rswstart().set_bit()),
-            Filter::F1 => self.regs.flt1.cr1.modify(|_, w| w.rswstart().set_bit()),
+            Filter::F0 => self.regs.flt0_cr1().modify(|_, w| w.rswstart().set_bit()),
+            Filter::F1 => self.regs.flt1_cr1().modify(|_, w| w.rswstart().set_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => self.regs.flt2.cr1.modify(|_, w| w.rswstart().set_bit()),
+            Filter::F2 => self.regs.flt2_cr1().modify(|_, w| w.rswstart().set_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => self.regs.flt3.cr1.modify(|_, w| w.rswstart().set_bit()),
+            Filter::F3 => self.regs.flt3_cr1().modify(|_, w| w.rswstart().set_bit()),
         }
 
         // • Synchronous with FLT0 if RSYNC=1: for FLTx (x>0), a regular
@@ -618,12 +620,12 @@ where
         // Injected conversions can be launched using the following methods:
         // • Software: writing ‘1’ to JSWSTART in the FLTxCR1 register.
         match filter {
-            Filter::F0 => self.regs.flt0.cr1.modify(|_, w| w.jswstart().set_bit()),
-            Filter::F1 => self.regs.flt1.cr1.modify(|_, w| w.jswstart().set_bit()),
+            Filter::F0 => self.regs.flt0_cr1().modify(|_, w| w.jswstart().set_bit()),
+            Filter::F1 => self.regs.flt1_cr1().modify(|_, w| w.jswstart().set_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => self.regs.flt2.cr1.modify(|_, w| w.jswstart().set_bit()),
+            Filter::F2 => self.regs.flt2_cr1().modify(|_, w| w.jswstart().set_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => self.regs.flt3.cr1.modify(|_, w| w.jswstart().set_bit()),
+            Filter::F3 => self.regs.flt3_cr1().modify(|_, w| w.jswstart().set_bit()),
         }
 
         // • Trigger: JEXTSEL[4:0] selects the trigger signal while JEXTEN activates the trigger
@@ -669,12 +671,12 @@ where
             // advantage of the sign bit being in the same place in the data register as for 32-bit
             // integers in Rust. (Data is the left 24 most bits of the register. The shift discards
             // the other fields).
-            Filter::F0 => (self.regs.flt0.rdatar.read().bits() as i32) >> 8,
-            Filter::F1 => (self.regs.flt1.rdatar.read().bits() as i32) >> 8,
+            Filter::F0 => (self.regs.flt0_rdatar().read().bits() as i32) >> 8,
+            Filter::F1 => (self.regs.flt1_rdatar().read().bits() as i32) >> 8,
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => (self.regs.flt2.rdatar.read().bits() as i32) >> 8,
+            Filter::F2 => (self.regs.flt2_rdatar().read().bits() as i32) >> 8,
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => (self.regs.flt3.rdatar.read().bits() as i32) >> 8,
+            Filter::F3 => (self.regs.flt3_rdatar().read().bits() as i32) >> 8,
         }
     }
 
@@ -682,12 +684,12 @@ where
     /// Suitable for use after a conversion is complete.
     pub fn read_injected(&self, filter: Filter) -> i32 {
         match filter {
-            Filter::F0 => (self.regs.flt0.jdatar.read().bits() as i32) >> 8,
-            Filter::F1 => (self.regs.flt1.jdatar.read().bits() as i32) >> 8,
+            Filter::F0 => (self.regs.flt0_jdatar().read().bits() as i32) >> 8,
+            Filter::F1 => (self.regs.flt1_jdatar().read().bits() as i32) >> 8,
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => (self.regs.flt2.jdatar.read().bits() as i32) >> 8,
+            Filter::F2 => (self.regs.flt2_jdatar().read().bits() as i32) >> 8,
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => (self.regs.flt3.jdatar.read().bits() as i32) >> 8,
+            Filter::F3 => (self.regs.flt3_jdatar().read().bits() as i32) >> 8,
         }
         // todo: JDATACH to know which channel was converted??
         // todo isn't this implied to the register we choose to sue?
@@ -734,21 +736,21 @@ where
         };
 
         match filter {
-            Filter::F0 => self.regs.flt0.cr1.modify(|_, w| w.rdmaen().set_bit()),
-            Filter::F1 => self.regs.flt1.cr1.modify(|_, w| w.rdmaen().set_bit()),
+            Filter::F0 => self.regs.flt0_cr1().modify(|_, w| w.rdmaen().set_bit()),
+            Filter::F1 => self.regs.flt1_cr1().modify(|_, w| w.rdmaen().set_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => self.regs.flt2.cr1.modify(|_, w| w.rdmaen().set_bit()),
+            Filter::F2 => self.regs.flt2_cr1().modify(|_, w| w.rdmaen().set_bit()),
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => self.regs.flt3.cr1.modify(|_, w| w.rdmaen().set_bit()),
+            Filter::F3 => self.regs.flt3_cr1().modify(|_, w| w.rdmaen().set_bit()),
         }
 
         let periph_addr = match filter {
-            Filter::F0 => &self.regs.flt0.rdatar as *const _ as u32,
-            Filter::F1 => &self.regs.flt1.rdatar as *const _ as u32,
+            Filter::F0 => &self.regs.flt0_rdatar() as *const _ as u32,
+            Filter::F1 => &self.regs.flt1_rdatar() as *const _ as u32,
             #[cfg(not(any(feature = "l4")))]
-            Filter::F2 => &self.regs.flt2.rdatar as *const _ as u32,
+            Filter::F2 => &self.regs.flt2_rdatar() as *const _ as u32,
             #[cfg(not(any(feature = "l4")))]
-            Filter::F3 => &self.regs.flt3.rdatar as *const _ as u32,
+            Filter::F3 => &self.regs.flt3_rdatar() as *const _ as u32,
         };
 
         // todo: Injected support. Should just need to add the option flag and enable `jdmaen()` bits
@@ -779,7 +781,7 @@ where
         // todo: Macro to reduce DRY here?
         match channel {
             Filter::F0 => {
-                self.regs.flt0.cr2.modify(|_, w| match interrupt_type {
+                self.regs.flt0_cr2().modify(|_, w| match interrupt_type {
                     DfsdmInterrupt::EndOfInjectedConversion => w.jeocie().set_bit(),
                     DfsdmInterrupt::EndOfConversion => w.reocie().set_bit(),
                     DfsdmInterrupt::DataOverrunInjected => w.jovrie().set_bit(),
@@ -790,7 +792,7 @@ where
                 });
             }
             Filter::F1 => {
-                self.regs.flt1.cr2.modify(|_, w| match interrupt_type {
+                self.regs.flt1_cr2().modify(|_, w| match interrupt_type {
                     DfsdmInterrupt::EndOfInjectedConversion => w.jeocie().set_bit(),
                     DfsdmInterrupt::EndOfConversion => w.reocie().set_bit(),
                     DfsdmInterrupt::DataOverrunInjected => w.jovrie().set_bit(),
@@ -802,7 +804,7 @@ where
             }
             #[cfg(not(any(feature = "l4")))]
             Filter::F2 => {
-                self.regs.flt2.cr2.modify(|_, w| match interrupt_type {
+                self.regs.flt2_cr2().modify(|_, w| match interrupt_type {
                     DfsdmInterrupt::EndOfInjectedConversion => w.jeocie().set_bit(),
                     DfsdmInterrupt::EndOfConversion => w.reocie().set_bit(),
                     DfsdmInterrupt::DataOverrunInjected => w.jovrie().set_bit(),
@@ -814,7 +816,7 @@ where
             }
             #[cfg(not(any(feature = "l4")))]
             Filter::F3 => {
-                self.regs.flt3.cr2.modify(|_, w| match interrupt_type {
+                self.regs.flt3_cr2().modify(|_, w| match interrupt_type {
                     DfsdmInterrupt::EndOfInjectedConversion => w.jeocie().set_bit(),
                     DfsdmInterrupt::EndOfConversion => w.reocie().set_bit(),
                     DfsdmInterrupt::DataOverrunInjected => w.jovrie().set_bit(),
@@ -882,5 +884,287 @@ where
         //          });
         //      }
         //  }
+    }
+}
+
+struct DfsdmRegs<R> {
+    regs: R,
+}
+
+#[cfg(any(feature="l4x6"))]
+impl<R> DfsdmRegs<R> where
+    R: Deref<Target = dfsdm_p::RegisterBlock>
+{
+    fn ch0_cfgr1(&self) -> &dfsdm_p::CHCFG0R1 {
+        &self.regs.chcfg0r1
+    }
+
+    fn ch0_cfgr2(&self) -> &dfsdm_p::CHCFG0R2 {
+        &self.regs.chcfg0r2
+    }
+
+    fn ch1_cfgr1(&self) -> &dfsdm_p::CHCFG1R1 {
+        &self.regs.chcfg1r1
+    }
+
+    fn ch1_cfgr2(&self) -> &dfsdm_p::CHCFG1R2 {
+        &self.regs.chcfg1r2
+    }
+    
+    fn ch2_cfgr1(&self) -> &dfsdm_p::CHCFG2R1 {
+        &self.regs.chcfg2r1
+    }
+
+    fn ch2_cfgr2(&self) -> &dfsdm_p::CHCFG2R2 {
+        &self.regs.chcfg2r2
+    }
+    
+    fn ch3_cfgr1(&self) -> &dfsdm_p::CHCFG3R1 {
+        &self.regs.chcfg3r1
+    }
+
+    fn ch3_cfgr2(&self) -> &dfsdm_p::CHCFG3R2 {
+        &self.regs.chcfg3r2
+    }
+    
+    fn ch4_cfgr1(&self) -> &dfsdm_p::CHCFG4R1 {
+        &self.regs.chcfg4r1
+    }
+
+    fn ch4_cfgr2(&self) -> &dfsdm_p::CHCFG4R2 {
+        &self.regs.chcfg4r2
+    }
+    
+    fn ch5_cfgr1(&self) -> &dfsdm_p::CHCFG5R1 {
+        &self.regs.chcfg5r1
+    }
+
+    fn ch5_cfgr2(&self) -> &dfsdm_p::CHCFG5R2 {
+        &self.regs.chcfg5r2
+    }
+    
+    fn ch6_cfgr1(&self) -> &dfsdm_p::CHCFG6R1 {
+        &self.regs.chcfg6r1
+    }
+
+    fn ch6_cfgr2(&self) -> &dfsdm_p::CHCFG6R2 {
+        &self.regs.chcfg6r2
+    }
+    
+    fn ch7_cfgr1(&self) -> &dfsdm_p::CHCFG7R1 {
+        &self.regs.chcfg7r1
+    }
+
+    fn ch7_cfgr2(&self) -> &dfsdm_p::CHCFG7R2 {
+        &self.regs.chcfg7r2
+    }
+
+    fn flt0_cr1(&self) -> &dfsdm_p::DFSDM0_CR1 {
+        &self.regs.dfsdm0_cr1
+    }
+
+    fn flt0_cr2(&self) -> &dfsdm_p::DFSDM0_CR2 {
+        &self.regs.dfsdm0_cr2
+    }
+
+    fn flt0_fcr(&self) -> &dfsdm_p::DFSDM0_FCR {
+        &self.regs.dfsdm0_fcr
+    }
+
+    fn flt0_rdatar(&self) -> &dfsdm_p::DFSDM0_RDATAR {
+        &self.regs.dfsdm0_rdatar
+    }
+
+    fn flt0_jdatar(&self) -> &dfsdm_p::DFSDM0_JDATAR {
+        &self.regs.dfsdm0_jdatar
+    }
+
+    fn flt2_cr1(&self) -> &dfsdm_p::DFSDM2_CR1 {
+        &self.regs.dfsdm2_cr1
+    }
+
+    fn flt2_cr2(&self) -> &dfsdm_p::DFSDM2_CR2 {
+        &self.regs.dfsdm2_cr2
+    }
+
+    fn flt2_fcr(&self) -> &dfsdm_p::DFSDM2_FCR {
+        &self.regs.dfsdm2_fcr
+    }
+
+    fn flt2_rdatar(&self) -> &dfsdm_p::DFSDM2_RDATAR {
+        &self.regs.dfsdm2_rdatar
+    }
+
+    fn flt2_jdatar(&self) -> &dfsdm_p::DFSDM2_JDATAR {
+        &self.regs.dfsdm2_jdatar
+    }
+
+    fn flt3_cr1(&self) -> &dfsdm_p::DFSDM3_CR1 {
+        &self.regs.dfsdm3_cr1
+    }
+
+    fn flt3_cr2(&self) -> &dfsdm_p::DFSDM3_CR2 {
+        &self.regs.dfsdm3_cr2
+    }
+
+    fn flt3_fcr(&self) -> &dfsdm_p::DFSDM3_FCR {
+        &self.regs.dfsdm3_fcr
+    }
+
+    fn flt3_rdatar(&self) -> &dfsdm_p::DFSDM3_RDATAR {
+        &self.regs.dfsdm3_rdatar
+    }
+
+    fn flt3_jdatar(&self) -> &dfsdm_p::DFSDM3_JDATAR {
+        &self.regs.dfsdm3_jdatar
+    }
+}
+
+#[cfg(not(any(feature="l4x6")))]
+impl<R> DfsdmRegs<R> where
+    R: Deref<Target = dfsdm_p::RegisterBlock>
+{
+    fn ch0_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch0.cfgr1
+    }
+
+    fn ch0_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch0.cfgr2
+    }
+
+    fn ch1_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch1.cfgr1
+    }
+
+    fn ch1_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch1.cfgr2
+    }
+    
+    fn ch2_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch2.cfgr1
+    }
+
+    fn ch2_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch2.cfgr2
+    }
+    
+    fn ch3_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch3.cfgr1
+    }
+
+    fn ch3_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch3.cfgr2
+    }
+    
+    fn ch4_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch4.cfgr1
+    }
+
+    fn ch4_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch4.cfgr2
+    }
+    
+    fn ch5_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch5.cfgr1
+    }
+
+    fn ch5_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch5.cfgr2
+    }
+    
+    fn ch6_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch6.cfgr1
+    }
+
+    fn ch6_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch6.cfgr2
+    }
+    
+    fn ch7_cfgr1(&self) -> &dfsdm_p::ch::CFGR1 {
+        &self.regs.ch7.cfgr1
+    }
+
+    fn ch7_cfgr2(&self) -> &dfsdm_p::ch::CFGR2 {
+        &self.regs.ch7.cfgr2
+    }
+
+    fn flt0_cr1(&self) -> &dfsdm_p::flt::CR1 {
+        &self.regs.flt0.cr1
+    }
+
+    fn flt0_cr2(&self) -> &dfsdm_p::flt::CR2 {
+        &self.regs.flt0.cr2
+    }
+
+    fn flt0_fcr(&self) -> &dfsdm_p::flt::FCR {
+        &self.regs.flt0.fcr
+    }
+
+    fn flt0_rdatar(&self) -> &dfsdm_p::flt::RDATAR {
+        &self.regs.flt0.rdatar
+    }
+
+    fn flt0_jdatar(&self) -> &dfsdm_p::flt::JDATAR {
+        &self.regs.flt0.jdatar
+    }
+
+    fn flt1_cr1(&self) -> &dfsdm_p::flt::CR1 {
+        &self.regs.flt1.cr1
+    }
+
+    fn flt1_cr2(&self) -> &dfsdm_p::flt::CR2 {
+        &self.regs.flt1.cr2
+    }
+
+    fn flt1_fcr(&self) -> &dfsdm_p::flt::FCR {
+        &self.regs.flt1.fcr
+    }
+
+    fn flt1_rdatar(&self) -> &dfsdm_p::flt::RDATAR {
+        &self.regs.flt1.rdatar
+    }
+
+    fn flt1_jdatar(&self) -> &dfsdm_p::flt::JDATAR {
+        &self.regs.flt1.jdatar
+    }
+
+    fn flt2_cr1(&self) -> &dfsdm_p::flt::CR1 {
+        &self.regs.flt2.cr1
+    }
+
+    fn flt2_cr2(&self) -> &dfsdm_p::flt::CR2 {
+        &self.regs.flt2.cr2
+    }
+
+    fn flt2_fcr(&self) -> &dfsdm_p::flt::FCR {
+        &self.regs.flt2.fcr
+    }
+
+    fn flt2_rdatar(&self) -> &dfsdm_p::flt::RDATAR {
+        &self.regs.flt2.rdatar
+    }
+
+    fn flt2_jdatar(&self) -> &dfsdm_p::flt::JDATAR {
+        &self.regs.flt2.jdatar
+    }
+
+    fn flt3_cr1(&self) -> &dfsdm_p::flt::CR1 {
+        &self.regs.flt3.cr1
+    }
+
+    fn flt3_cr2(&self) -> &dfsdm_p::flt::CR2 {
+        &self.regs.flt3.cr2
+    }
+
+    fn flt3_fcr(&self) -> &dfsdm_p::flt::FCR {
+        &self.regs.flt3.fcr
+    }
+
+    fn flt3_rdatar(&self) -> &dfsdm_p::flt::RDATAR {
+        &self.regs.flt3.rdatar
+    }
+
+    fn flt3_jdatar(&self) -> &dfsdm_p::flt::JDATAR {
+        &self.regs.flt3.jdatar
     }
 }
