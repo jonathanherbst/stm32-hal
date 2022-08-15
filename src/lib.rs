@@ -492,6 +492,9 @@ pub mod rtc;
 )))]
 pub mod sai;
 
+//#[cfg(any(feature = "l4x6"))]
+pub mod sdmmc;
+
 pub mod spi;
 
 pub mod timer;
