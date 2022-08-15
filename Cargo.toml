@@ -22,7 +22,7 @@ cortex-m = "0.7.3"
 # Peripheral Access Crates
 stm32f3 = { version = "0.15.1", optional = true }
 stm32f4 = { version = "0.15.1", optional = true }
-stm32l4 = { version = "0.15.1", optional = true }
+stm32l4 = { path = "lib/stm32-rs/stm32l4", version = "0.15.1", optional = true }
 stm32l5 = { version = "0.15.1", optional = true }
 stm32g0 = { version = "0.15.1", optional = true }
 stm32g4 = { version = "0.15.1", optional = true }
