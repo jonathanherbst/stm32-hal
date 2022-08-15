@@ -11,7 +11,7 @@ use crate::{clocks::Clocks, pac::RCC, util::rcc_en_reset};
 use cfg_if::cfg_if;
 
 cfg_if! {
-    if #[cfg(any(feature = "l5", feature = "h7b3"))] {
+    if #[cfg(any(feature = "l4x6", feature = "l5", feature = "h7b3"))] {
         use crate::pac::dfsdm1 as dfsdm_p;
     } else {
         use crate::pac::dfsdm as dfsdm_p;
